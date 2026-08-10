@@ -151,10 +151,10 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
                 if let conditionKey { onAcknowledgeCondition?(conditionKey) }
             case Self.investigateActionID, UNNotificationDefaultActionIdentifier:
                 // A plain click (or Investigate) leads to the app's real home.
-                // The delegate is non-UI and can't call openWindow — mirror the
-                // `settingsTab` deep-link idiom: set an AppState property; an
-                // App-scope observer (StatusLabel) opens the home window on the
-                // `pendingHomeSection` change; `HomeView` switches to that section.
+                // The delegate is non-UI and can't open a window — mirror the
+                // `settingsTab` deep-link idiom: set an AppState property; the
+                // AppKit `AppDelegate` observes `pendingHomeSection` and opens the
+                // home window; `HomeView` switches to that section.
                 if category == Self.resolutionCategoryID {
                     // Resolution: the item now lives in History, not Now — route
                     // there, with no Now selection (an empty key on Now would just

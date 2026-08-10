@@ -173,8 +173,19 @@ public struct DetectionThresholds: Sendable {
     /// next to nothing, and a card claiming it "drains the battery" would be
     /// false. Require this much average CPU over the window. The founding
     /// busy-poll (mysqld --sleep=0) ran at >100% CPU — it passes; the idle
-    /// editor does not.
+    /// editor does not. Fallback only: used when the kernel does not report
+    /// per-process energy (energyNanojoules == 0, V4/stale), otherwise the
+    /// power floor below is the corroboration.
     public var wakeupsMinimumCPUPercent: Double = 3
+    /// energy.wakeups corroboration floor — the CONSEQUENCE, in real watts.
+    /// A raw wakeup count is machine-blind (150/s is a busy-poll on an M1 Air
+    /// and idle noise on an M5 Max); the actual battery cost is not. We already
+    /// sample per-process energy, so gate on sustained power attributable to the
+    /// process: 0.5 W held over the 10-min window is a genuine, machine-fair
+    /// drain a human would feel, regardless of silicon. This REPLACES the CPU%
+    /// proxy whenever energy is reported; wakeupsMinimumCPUPercent is the
+    /// no-energy fallback.
+    public var wakeupsFloorPowerWatts: Double = 0.5
     /// disk.thrash: sustained Δ disk bytes/s way above the lineage's own
     /// baseline. The floor is deliberately high (sustained, not burst): a
     /// 40 MB/s average over 10 minutes is ~24 GB of I/O.
@@ -548,6 +559,17 @@ public enum DetectionRules {
         return rates.isEmpty ? nil : (rates, span)
     }
 
+    /// Sustained power (watts) attributable to a process over `window`, from
+    /// the cumulative per-process energy counter (nanojoules). nil when energy
+    /// is unreported for the window (V4/stale kernels leave it 0 → `rateCurve`
+    /// finds no known span) — callers fall back to a CPU-work proxy. 1 W = 1e9
+    /// nJ/s, so the average Δ-rate divided by 1e9 is watts.
+    static func sustainedPowerWatts(history: [ProcessSample], window: TimeInterval) -> Double? {
+        guard let (rates, _) = rateCurve(history: history, window: window, counter: { $0.energyNanojoules }) else { return nil }
+        let averageNanojoulesPerSecond = rates.reduce(0, +) / Double(rates.count)
+        return averageNanojoulesPerSecond / 1_000_000_000
+    }
+
     /// Rule 8 (energy.wakeups): sustained interrupt-wakeup rate far above
     /// the lineage's own baseline — the founding busy-poll mechanism,
     /// detected BY MECHANISM (a 1ms poll loop measured ~1,400/s in
@@ -572,18 +594,25 @@ public enum DetectionRules {
         guard average >= thresholds.wakeupsFloorPerSecond else { return nil }
         let deviation = RobustMath.deviation(average, from: baseline.stats)
         guard deviation >= thresholds.wakeupsMADMultiplier else { return nil }
-        // Corroboration: a wake spike from an idle process (an editor at ~0%
-        // CPU) is cheap coalesced noise, not a battery drain — don't cry wolf.
-        // Average CPU over the window must clear the floor; a real busy-poll
-        // does real work and passes.
-        let cpuWindow = history.suffix(rates.count + 1)
-        let cpuRates = zip(cpuWindow, cpuWindow.dropFirst()).compactMap { earlier, later -> Double? in
-            let dt = later.timestamp.timeIntervalSince(earlier.timestamp)
-            guard dt > 0 else { return nil }
-            return (later.cpuTimeSeconds - earlier.cpuTimeSeconds) / dt * 100
+        // Corroboration: a wake spike only matters if it's actually COSTING
+        // something — an idle process (an editor at ~0% CPU) can have an
+        // elevated coalesced wake rate that drains no battery, and a card
+        // claiming otherwise would be false. The honest measure is real power
+        // draw, which is machine-fair (unlike the raw wake count). Gate on
+        // sustained watts when the kernel reports energy; fall back to the CPU%
+        // work proxy only when it doesn't (V4/stale → energy 0).
+        if let watts = sustainedPowerWatts(history: history, window: thresholds.wakeupsWindow) {
+            guard watts >= thresholds.wakeupsFloorPowerWatts else { return nil }
+        } else {
+            let cpuWindow = history.suffix(rates.count + 1)
+            let cpuRates = zip(cpuWindow, cpuWindow.dropFirst()).compactMap { earlier, later -> Double? in
+                let dt = later.timestamp.timeIntervalSince(earlier.timestamp)
+                guard dt > 0 else { return nil }
+                return (later.cpuTimeSeconds - earlier.cpuTimeSeconds) / dt * 100
+            }
+            let averageCPU = cpuRates.isEmpty ? 0 : cpuRates.reduce(0, +) / Double(cpuRates.count)
+            guard averageCPU >= thresholds.wakeupsMinimumCPUPercent else { return nil }
         }
-        let averageCPU = cpuRates.isEmpty ? 0 : cpuRates.reduce(0, +) / Double(cpuRates.count)
-        guard averageCPU >= thresholds.wakeupsMinimumCPUPercent else { return nil }
         return Anomaly(
             kind: .energyWakeups,
             identity: last.identity,

@@ -206,17 +206,20 @@ public actor BaselineStore {
 
     // MARK: - Lifecycle
 
-    public func loadIfNeeded() {
+    /// `now` is injectable (defaults to the wall clock) so persistence tests
+    /// can assert round-tripping without the load-time TTL decay rotting their
+    /// fixed-date fixtures — the same seam `recordTick(calendar:)` offers.
+    public func loadIfNeeded(now: Date = .now) {
         guard !loaded else { return }
         loaded = true
         guard let data = try? Data(contentsOf: fileURL),
               let stored = try? JSONDecoder().decode(Snapshot.self, from: data)
         else { return }
         snapshot = stored
-        let cutoff = Date.now.addingTimeInterval(-Self.flaggedTTL)
+        let cutoff = now.addingTimeInterval(-Self.flaggedTTL)
         snapshot.flagged.removeAll { $0.flaggedAt < cutoff }
         // Decay stale robust lineages, then cap the survivors (newest win).
-        let staleCutoff = Date.now.addingTimeInterval(-Self.robustTTL)
+        let staleCutoff = now.addingTimeInterval(-Self.robustTTL)
         snapshot.robust = snapshot.robust.filter { $0.value.lastSeen >= staleCutoff }
         if snapshot.robust.count > Self.robustLineageCap {
             let keep = Set(

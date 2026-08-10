@@ -25,7 +25,6 @@ struct SettingsView: View {
     @State private var devPassword = ""
     @State private var unlockFailed = false
     @State private var pendingTopupCents: Int?
-    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         TabView(selection: $appState.settingsTab) {
@@ -223,8 +222,9 @@ struct SettingsView: View {
 
             Section("Anomaly history") {
                 Button("Open Anomaly History…") {
-                    openWindow(id: "history")
-                    NSApp.activate(ignoringOtherApps: true)
+                    // Routes through AppState → AppDelegate opens the Home window
+                    // (AppKit-hosted; the SwiftUI history Window scene is gone).
+                    appState.pendingHomeSection = .history
                 }
                 Picker("Keep the last", selection: Binding(
                     get: { appState.journalRetentionLimit },

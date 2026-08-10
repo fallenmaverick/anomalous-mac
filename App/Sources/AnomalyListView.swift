@@ -14,9 +14,9 @@ private extension String {
 struct AnomalyListView: View {
     @Bindable var appState: AppState
     let updater: UpdaterController
-    @Environment(\.openSettings) private var openSettings
-    @Environment(\.openWindow) private var openWindow
-    @Environment(\.dismiss) private var dismiss
+    // Menu-bar host is AppKit (AppDelegate) — scene actions (openWindow /
+    // openSettings / dismiss) are inert here, so window opening and popover
+    // closing route through AppDelegate / AppState instead.
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -25,11 +25,10 @@ struct AnomalyListView: View {
             } else {
                 // No header/count — the cards ARE the content. The sample status
                 // ("N processes · time") lives quietly in the footer instead.
-                // The card stack sizes to its content (a MenuBarExtra window
-                // sizes to intrinsic content — a bare ScrollView collapses to
-                // zero here and clips the cards). Anomalies are rare by design,
-                // so render them naturally; only scroll once the list would
-                // exceed a sane height.
+                // The card stack sizes to its content: the NSPopover host tracks
+                // this view's intrinsic size (NSHostingController
+                // `.preferredContentSize`), so the panel fits the cards.
+                // Anomalies are rare by design, so render them naturally.
                 // Same program can run as several processes at once (macOS spawns
                 // one CGPDFService XPC helper per PDF client, etc.). Rather than
                 // repeat near-identical cards, group a program's instances into
@@ -50,18 +49,14 @@ struct AnomalyListView: View {
                         }
                     }
                 }
-                // Measure the natural stack height and cap it: frame =
-                // min(natural, cap), so a short stack shows no empty space and a
-                // tall one (even a single tall card) scrolls instead of running
-                // off-screen. Only scrolls when it actually overflows.
-                // Render the cards in a plain stack — NO ScrollView. The
-                // MenuBarExtra window sizes to this content, so expanding a card
-                // grows the WINDOW in place: the cards above stay put and it
-                // animates cleanly. A ScrollView here auto-scrolled on expand
-                // (yanking the cards above out of view — "scrolls up first") and
-                // reflowed the panel. Anomalies are rare by design, so the stack
-                // stays short; a genuinely huge stack could get tall, which the
-                // detection-sensitivity work will keep in check.
+                // Render the cards in a plain stack — NO ScrollView. The NSPopover
+                // sizes to this content, so expanding a card grows the POPOVER in
+                // place (from its anchor under the icon): the cards above stay put
+                // and it animates cleanly. A ScrollView here auto-scrolled on
+                // expand (yanking the cards above out of view — "scrolls up
+                // first") and reflowed the panel. Anomalies are rare by design, so
+                // the stack stays short; a genuinely huge stack could get tall,
+                // which the detection-sensitivity work will keep in check.
                 cards
             }
 
@@ -176,39 +171,31 @@ struct AnomalyListView: View {
             Menu {
                     Button("Check for Updates…") {
                         updater.checkForUpdates()
-                        dismiss()
+                        AppDelegate.shared?.closePopover()
                     }
                     .disabled(!updater.canCheckForUpdates)
                     Divider()
                     Button("Settings…") {
-                        // Bring the app forward — a menu-bar (accessory) app's
-                        // Settings window otherwise opens behind everything.
-                        // The argless activate() COOPERATES (macOS 14+) and can
-                        // leave an accessory app behind the frontmost app, so we
-                        // pass ignoringOtherApps and then force the Settings
-                        // window frontmost once it exists (next runloop tick).
-                        openSettings()
-                        NSApp.activate(ignoringOtherApps: true)
-                        DispatchQueue.main.async {
-                            NSApp.windows
-                                .first { $0.identifier?.rawValue == "com_apple_SwiftUI_Settings_window" }?
-                                .makeKeyAndOrderFront(nil)
-                        }
-                        dismiss()
+                        // AppDelegate opens the SwiftUI Settings scene from AppKit
+                        // (showSettingsWindow:) and forces it frontmost — an
+                        // accessory app's Settings window otherwise opens behind.
+                        AppDelegate.shared?.openSettingsWindow()
+                        AppDelegate.shared?.closePopover()
                     }
                     .keyboardShortcut(",")
                     Button("Anomaly History…") {
-                        openWindow(id: "history")
-                        NSApp.activate(ignoringOtherApps: true)
-                        dismiss()
+                        // Routes through AppState: the delegate opens Home and
+                        // HomeView switches to the History section.
+                        appState.pendingHomeSection = .history
+                        AppDelegate.shared?.closePopover()
                     }
                     Button("View Send Log") {
                         NSWorkspace.shared.activateFileViewerSelecting([appState.sendLogDirectory])
-                        dismiss()
+                        AppDelegate.shared?.closePopover()
                     }
                     Button("Help & Documentation") {
                         NSWorkspace.shared.open(anomalousHelpURL("/help"))
-                        dismiss()
+                        AppDelegate.shared?.closePopover()
                     }
                     Divider()
                     Button("Quit Anomalous") {
@@ -1176,7 +1163,6 @@ struct DiagnosisCardView: View {
 struct GetHelpControl: View {
     let judged: AppState.JudgedAnomaly
     let appState: AppState
-    @Environment(\.openSettings) private var openSettings
 
     @ViewBuilder
     var body: some View {
@@ -1210,13 +1196,8 @@ struct GetHelpControl: View {
                 // offering a "Retry" that would just fail again.
                 Button {
                     appState.settingsTab = .account
-                    openSettings()
-                    NSApp.activate(ignoringOtherApps: true)
-                    DispatchQueue.main.async {
-                        NSApp.windows
-                            .first { $0.identifier?.rawValue == "com_apple_SwiftUI_Settings_window" }?
-                            .makeKeyAndOrderFront(nil)
-                    }
+                    AppDelegate.shared?.openSettingsWindow()
+                    AppDelegate.shared?.closePopover()
                 } label: {
                     Label("Add credit", systemImage: "creditcard")
                 }

@@ -2,97 +2,22 @@ import SwiftUI
 import AnomalousCore
 
 /// Menu-bar sensor. The anti-Activity-Monitor: a quiet icon that changes
-/// state only when something is actually wrong. No windows, no dock icon
-/// (LSUIElement), no chat — cards and guided steps only.
+/// state only when something is actually wrong. No dock icon (LSUIElement),
+/// no chat — cards and guided steps only.
+///
+/// The menu bar, popover, and the Home/Welcome windows are all owned by
+/// `AppDelegate` (AppKit `NSStatusItem` + `NSPopover`), because SwiftUI's
+/// `MenuBarExtra(.window)` mis-anchors its resizing panel. Only the `Settings`
+/// scene stays here — SwiftUI's `Settings` is opened from AppKit via
+/// `showSettingsWindow:` (see `AppDelegate.openSettingsWindow()`).
 @main
 struct AnomalousApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     private let appState = AppState.shared
 
-    // Sparkle auto-update. Owned for the app's lifetime; started at init so
-    // background update checks run from launch. The "Check for Updates…"
-    // control lives in the menu-bar window's footer menu (AnomalyListView).
-    @State private var updater = UpdaterController()
-
     var body: some Scene {
-        MenuBarExtra {
-            AnomalyListView(appState: appState, updater: updater)
-                .frame(width: 420)
-        } label: {
-            StatusLabel(appState: appState)
-        }
-        .menuBarExtraStyle(.window)
-
         Settings {
             SettingsView(appState: appState)
-        }
-
-        // First-run "settings you should know about" — the one system approval
-        // (helper) + the two privacy choices, each with a help link. Opened once
-        // by StatusLabel on first launch; also reachable any time from Settings.
-        Window("Welcome to Anomalous", id: "welcome") {
-            OnboardingView(appState: appState)
-        }
-        .windowResizability(.contentSize)
-        .defaultPosition(.center)
-
-        // The app's window "home" — sidebar shell (Now · History · Insights · Sent).
-        // Keeps id "history" so the existing openers (the popover gear menu,
-        // Settings, and the notification deep-link) still target it. Opens as an
-        // accessory window (no Dock icon) — the app stays a quiet menu-bar app.
-        Window("Anomalous", id: "history") {
-            HomeView(appState: appState)
-        }
-        .windowResizability(.contentMinSize)
-        .defaultSize(width: 940, height: 660)
-    }
-}
-
-/// The menu-bar mark — QUIET by default, red spike on an anomaly (HIG: a
-/// menu-bar app shows nothing alarming until it must). Its own view so it can
-/// own launch-time work: it lives for the app's lifetime, so `.task` here is
-/// the reliable place to start monitoring and to present the first-run window.
-private struct StatusLabel: View {
-    let appState: AppState
-    @Environment(\.openWindow) private var openWindow
-    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
-
-    var body: some View {
-        Group {
-            if appState.anomalies.isEmpty {
-                // Quiet: a TEMPLATE mark the system tints to the menu bar
-                // (white on a dark bar, dark on a light bar). No color, no noise.
-                Image("StatusMark")
-            } else {
-                // Active: a single ORIGINAL (color) image — the red spike
-                // survives (MenuBarExtra flattens a mixed template+color label
-                // to monochrome, so a ZStack overlay would render white).
-                Image("StatusActive").renderingMode(.original)
-            }
-        }
-        .accessibilityLabel(appState.anomalies.isEmpty
-            ? "Anomalous: nothing is wrong"
-            : "Anomalous: \(appState.anomalies.count) anomaly\(appState.anomalies.count == 1 ? "" : "ies") detected")
-        .task {
-            appState.startMonitoring()   // idempotent
-            if !hasCompletedOnboarding {
-                openWindow(id: "welcome")
-                // Accessory (LSUIElement) apps open windows behind the frontmost
-                // app — bring the welcome window forward so it isn't missed.
-                NSApp.activate(ignoringOtherApps: true)
-            }
-        }
-        // Notification deep-link observer. StatusLabel is the MenuBarExtra label —
-        // it lives for the app's lifetime and already holds `openWindow`, so it's
-        // the app-scope surface that turns the delegate's `pendingHomeSection`
-        // into an actual window open (the delegate is non-UI and can't). Keys on
-        // the section hint so BOTH an anomaly (→ Now) and a resolution (→ History)
-        // click open the window. Opening id "history" refocuses it if it's already
-        // open; HomeView's own onChange then switches to the section and (for Now)
-        // drives the scroll/selection. Mirrors the welcome-window open above.
-        .onChange(of: appState.pendingHomeSection) { _, newValue in
-            guard newValue != nil else { return }
-            openWindow(id: "history")
-            NSApp.activate(ignoringOtherApps: true)
         }
     }
 }

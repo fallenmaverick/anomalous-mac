@@ -173,7 +173,9 @@ struct BaselineStoreTests {
         await store.save()
 
         let reloaded = BaselineStore(fileURL: url)
-        await reloaded.loadIfNeeded()
+        // Anchor the load-time TTL decay to the fixtures' own timeframe so the
+        // test doesn't rot as the wall clock advances past robustTTL.
+        await reloaded.loadIfNeeded(now: start.addingTimeInterval(8 * 90))
         let stats = await reloaded.robustStats(forKey: "dasd", metric: .cpuPercent)
         #expect(stats?.count == 8)
         #expect(stats?.median == 0.1)

@@ -184,7 +184,8 @@ private func counterSamples(
     diskBytesPerSecond: Double = 0,
     footprintMB: [Double]? = nil,
     rssMB: [Double]? = nil,
-    cpuPercent: Double = 5
+    cpuPercent: Double = 5,
+    energyWattsSustained: Double = 0
 ) -> [ProcessSample] {
     let start = Date(timeIntervalSince1970: 1_750_000_000)
     return (0...minutes).map { minute in
@@ -200,6 +201,10 @@ private func counterSamples(
             physFootprintBytes: UInt64(footprint * 1_048_576),
             diskBytesRead: diskBytesPerSecond > 0 ? UInt64(4096 + t * diskBytesPerSecond / 2) : 0,
             diskBytesWritten: diskBytesPerSecond > 0 ? UInt64(4096 + t * diskBytesPerSecond / 2) : 0,
+            // energyNanojoules is cumulative: base offset keeps it nonzero from
+            // the first sample (0 = "unknown", not "started at zero"), then
+            // accrues watts × 1e9 nJ per second.
+            energyNanojoules: energyWattsSustained > 0 ? UInt64(1_000_000 + t * energyWattsSustained * 1_000_000_000) : 0,
             interruptWakeups: wakeupsPerSecond > 0 ? UInt64(1000 + t * wakeupsPerSecond) : 0
         )
     }
@@ -315,6 +320,31 @@ struct WakeupsRuleTests {
     func respectsWindow() {
         #expect(DetectionRules.wakeupsAnomaly(
             history: counterSamples(minutes: 5, wakeupsPerSecond: 1400),
+            baseline: baseline(median: 5, mad: 2)
+        ) == nil)
+    }
+
+    @Test("energy spine: real power draw corroborates even at ~0% CPU")
+    func realPowerFiresRegardlessOfCPU() {
+        // A machine-fair drain — 1.0 W sustained — is a genuine battery cost
+        // whatever the per-core CPU% reads. When the kernel reports energy it
+        // IS the corroboration, so this fires where the old CPU%-only proxy
+        // (0% CPU → "idle") would have stayed silent.
+        #expect(DetectionRules.wakeupsAnomaly(
+            history: counterSamples(minutes: 15, wakeupsPerSecond: 1400, cpuPercent: 0, energyWattsSustained: 1.0),
+            baseline: baseline(median: 5, mad: 2)
+        )?.kind == .energyWakeups)
+    }
+
+    @Test("energy spine: high wakeups + high CPU but negligible power → no card")
+    func negligiblePowerSuppressesDespiteCPU() {
+        // The machine-fair suppression: lots of wakeups and real CPU churn, but
+        // the process is only costing ~0.2 W — below the drain a human feels.
+        // Because energy is REPORTED, it overrides the CPU% proxy that would
+        // otherwise have fired this. (A raw wakeup count can't tell these
+        // apart; joules can, on any silicon.)
+        #expect(DetectionRules.wakeupsAnomaly(
+            history: counterSamples(minutes: 15, wakeupsPerSecond: 1400, cpuPercent: 40, energyWattsSustained: 0.2),
             baseline: baseline(median: 5, mad: 2)
         ) == nil)
     }

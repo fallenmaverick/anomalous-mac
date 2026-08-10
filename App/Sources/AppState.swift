@@ -188,9 +188,10 @@ final class AppState {
     var pendingHomeSelection: String? = nil
 
     /// Companion window-open trigger + SECTION hint for a notification deep-link.
-    /// The delegate is non-UI and can't open a window, so it sets this; an
-    /// App-scope observer (StatusLabel) opens the home window on any non-nil
-    /// value, and `HomeView` switches to the named section then clears it (nil →
+    /// The delegate is non-UI and can't open a window, so it sets this; the
+    /// AppKit `AppDelegate` observes it (Observation framework) and opens the
+    /// home window on any non-nil value, and `HomeView` switches to the named
+    /// section then clears it (nil →
     /// section is a real change, so a repeat click of the same notification
     /// re-arms). An anomaly click routes to `.now` (paired with a
     /// `pendingHomeSelection` scroll target); a resolution click routes to

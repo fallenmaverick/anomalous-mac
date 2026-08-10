@@ -351,9 +351,10 @@ struct HomeView: View {
 }
 
 // The app stays a quiet `.accessory` (LSUIElement: menu-bar only, no Dock icon)
-// at all times. The home window opens as an accessory window — like Settings and
-// Welcome — brought forward via `NSApp.activate`. We deliberately do NOT toggle
-// the activation policy to gain a Dock icon while the window is open: flipping
-// `setActivationPolicy` makes SwiftUI's MenuBarExtra duplicate its status item (a
-// ghost menu-bar icon). A real Dock presence would need an AppKit NSStatusItem
-// instead of MenuBarExtra — a deliberate future rearchitecture, not a toggle.
+// at all times. The home window is an AppKit `NSWindow` (hosting this view),
+// opened/focused by `AppDelegate.openHome()` and brought forward via
+// `NSApp.activate`. We deliberately do NOT toggle the activation policy to gain
+// a Dock icon while the window is open: flipping `setActivationPolicy` used to
+// make SwiftUI's MenuBarExtra duplicate its status item. The menu bar is now an
+// AppKit `NSStatusItem` (see `AppDelegate`), so a real Dock presence is a clean
+// future option — but still a deliberate choice, not an automatic toggle.
