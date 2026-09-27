@@ -1406,7 +1406,7 @@ final class AppState {
                 }
                 self.resolveDiscovery(.failed("Lookup timed out"), lineage: lineage, id: id)
             } catch {
-                self.resolveDiscovery(.failed("Couldn't reach the service"), lineage: lineage, id: id)
+                self.resolveDiscovery(.failed(DiscoveryClient.failureMessage(for: error)), lineage: lineage, id: id)
                 print("[anomalous] discovery failed for \(anomaly.identity.executableName): \(error.localizedDescription)")
             }
         }
