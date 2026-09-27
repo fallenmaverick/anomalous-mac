@@ -462,7 +462,7 @@ struct SettingsView: View {
                     get: { appState.contributionEnabled },
                     set: { appState.contributionEnabled = $0 }
                 ))
-                Text("Only anonymous signatures (process name, version, OS, anomaly shape) are sent — never paths, arguments, or anything identifiable. Every transmission is recorded in the send log.")
+                Text("Optional and off until you choose it. Signatures include process identity, versions, hardware class, and anomaly measurements; no account, file paths, or command lines. Every payload is recorded in the send log.")
                     .font(.footnote).foregroundStyle(.secondary)
             }
 
@@ -471,7 +471,7 @@ struct SettingsView: View {
                     get: { appState.discoveryEnabled },
                     set: { appState.discoveryEnabled = $0 }
                 ))
-                Text("When Anomalous doesn't recognize a process, send just its name (no personal data, no file paths) to our API to look up what it is. You get a real answer instead of a shrug — **Sourced by Anomalous** — and it's added to the shared knowledge map so everyone benefits. Every lookup is in your send log.")
+                Text("After your first lookup confirmation, research unfamiliar processes using their identity, versions, installation source, and anomaly type. Shared safety guidance requires review. Every lookup is in your send log.")
                     .font(.footnote).foregroundStyle(.secondary)
             }
 

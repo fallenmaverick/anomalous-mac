@@ -216,12 +216,15 @@ final class AppState {
     /// judgment core consumes it to weigh anomalies against machine state.
     private(set) var systemSignals: SystemSignals?
 
-    /// Contribution is core to the product (contributors are the supply
+    /// Contribution is optional (contributors are the supply
     /// side) — disclosed plainly in the popover, toggleable, and every
     /// send is in the byte-for-byte log the user can open.
     var contributionEnabled: Bool {
-        get { UserDefaults.standard.object(forKey: "contributionEnabled") as? Bool ?? true }
-        set { UserDefaults.standard.set(newValue, forKey: "contributionEnabled") }
+        get { UserDefaults.standard.bool(forKey: "contributionConsentV1") && UserDefaults.standard.bool(forKey: "contributionEnabled") }
+        set {
+            UserDefaults.standard.set(newValue, forKey: "contributionEnabled")
+            UserDefaults.standard.set(true, forKey: "contributionConsentV1")
+        }
     }
 
     /// Granular consent, SEPARATE from contribution: when Anomalous doesn't
@@ -230,7 +233,7 @@ final class AppState {
     /// dead-end shrug. Every lookup is in the send log; a per-card "Look it
     /// up" tap can still discover a single process while this is OFF.
     var discoveryEnabled: Bool {
-        get { UserDefaults.standard.object(forKey: "discoveryEnabled") as? Bool ?? true }
+        get { UserDefaults.standard.object(forKey: "discoveryEnabled") == nil || UserDefaults.standard.bool(forKey: "discoveryEnabled") }
         set { UserDefaults.standard.set(newValue, forKey: "discoveryEnabled") }
     }
 

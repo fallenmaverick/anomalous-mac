@@ -100,8 +100,8 @@ public enum SignatureComposer {
         return try encoder.encode(payload)
     }
 
-    /// Coarse device class from hw.model (e.g. "Mac16,5") — the server's
-    /// k-anonymity gate buckets rare classes further.
+    /// Hardware model from hw.model (e.g. "Mac16,5"), included only when the
+    /// user enables signature contribution. Individual signatures are not public.
     public static var hardwareClass: String {
         var size = 0
         sysctlbyname("hw.model", nil, &size, nil, 0)
