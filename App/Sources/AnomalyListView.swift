@@ -70,10 +70,6 @@ struct AnomalyListView: View {
             appState.startMonitoring()
             appState.helper.refreshStatus()
         }
-        // Popover visibility drives discovery polling: a lookup in flight is
-        // dropped when the popover closes (the result still lands server-side).
-        .onAppear { appState.popoverIsOpen = true }
-        .onDisappear { appState.popoverIsOpen = false }
     }
 
     /// The "super part": system-wide monitoring. Shown right in the popover

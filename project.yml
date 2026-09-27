@@ -10,7 +10,7 @@ packages:
   # Sparkle auto-update (github.com/sparkle-project/Sparkle). SPM embeds
   # Sparkle.framework (with its XPC services + Autoupdate/Updater.app) into
   # the app bundle — these nested helpers MUST be Developer ID-signed at
-  # release time; see memory-bank/build-deployment.md.
+  # release time; see BUILD.md.
   Sparkle:
     url: https://github.com/sparkle-project/Sparkle
     exactVersion: "2.9.4"
@@ -165,7 +165,7 @@ targets:
         SUEnableInstallerLauncher: true
         # PLACEHOLDER — the real EdDSA public key is injected at release time
         # from Sparkle's `generate_keys` (private key stays in the login
-        # Keychain and is NEVER committed). See memory-bank/build-deployment.md.
+        # Keychain and is NEVER committed). See BUILD.md.
         # DO NOT commit a real key here.
         SUPublicEDKey: "OoRc2WZfiHX21nhhm/inmv5l282Ob97GBwx+fZoML/E="
     settings:

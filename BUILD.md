@@ -6,12 +6,13 @@ any of this — just [download the DMG](https://anomalous.bot).
 ## Requirements
 
 - macOS 26 (Tahoe) or later, Apple Silicon.
-- Xcode 27 beta and [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`).
+- Xcode 27 and [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`).
 - Foundation Models (Apple Intelligence) for the on-device judgment layer; it
   degrades to knowledge-map-only cards where unavailable.
 
-Validation toolchain: Xcode 27.0 beta (`27A5252f`), Swift 6.4. The core suite
-(364 tests, including the opt-in local history replay) and unsigned Release compilation passed with this toolchain.
+Validation toolchain: Xcode 27.2 (`27B5019j`), Swift 6.4. The core test suite and
+Release compilation pass with this toolchain; an opt-in replay of private local
+history runs only when `ANOMALOUS_PRIVATE_REPLAY_DIR` is set.
 This does not replace signed runtime checks on macOS 26 and 27. The deployment
 target remains macOS 26; compiling the current source requires the newer SDK.
 CI uses GitHub's `xcode-27` preview runner, generates the ignored Xcode project,

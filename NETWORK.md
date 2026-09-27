@@ -8,9 +8,9 @@ process discovery, and paid help do send data as described below.
 |---|---|---|
 | anomalous.bot | Sparkle update feed and signed application downloads | Automatic update checks or Check for Updates |
 | api.anomalous.bot | Signed process-identity feed; no process list in the request | Periodic refresh |
-| api.anomalous.bot | Anomaly signature: process identity, versions, anomaly shape, coarse hardware and timestamp | After explicit contribution consent; disable in Privacy settings |
+| api.anomalous.bot | Anomaly signature: process identity, versions, anomaly shape, hardware model identifier (for example Mac16,5) and timestamp | After explicit contribution consent; disable in Privacy settings |
 | api.anomalous.bot | Unknown-process discovery: name, bundle ID, versions, install source, anomaly type | After discovery confirmation; disable automatic discovery in Privacy settings |
-| api.anomalous.bot | Paid Get Help: allowlisted diagnosis summary and metric curves, with account authentication | Explicit Get Help action |
+| api.anomalous.bot | Paid Get Help: bundle ID, app and OS versions, hardware model identifier, anomaly type, install source, an allowlisted diagnosis summary and metric curves, with account authentication | Explicit Get Help action |
 | api.anomalous.bot | Account registration, authentication, balance and checkout creation | Account and billing actions |
 | Apple | App Attest registration and request attestation for contribution and discovery | When these features require attestation |
 | Stripe (browser) | Checkout and payment processing | When adding prepaid funds |

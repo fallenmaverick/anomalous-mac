@@ -270,10 +270,6 @@ final class AppState {
         }
     }
 
-    /// True while the popover is showing. Discovery polling stops when it
-    /// closes (the result still lands in the corpus server-side for next time).
-    var popoverIsOpen = true
-
     let sendLogDirectory = URL.applicationSupportDirectory
         .appending(path: "Anomalous/send-log", directoryHint: .isDirectory)
 
@@ -1510,7 +1506,6 @@ final class AppState {
             robust: judgment[.cpuPercent]?.stats,
             sample: sample,
             history: hist,
-            observedSpan: hist.count >= 2 ? sample.timestamp.timeIntervalSince(hist.first!.timestamp) : nil,
             thresholds: thresholds
         ) {
             found.append(a)
@@ -2040,14 +2035,9 @@ final class AppState {
         }
     }
 
-    /// Escalate a thin local diagnosis to the paid triage service. Composes
-    /// the account-linked payload (safe fields only — see PayloadComposer),
-    /// logs it byte-for-byte, and POSTs it. Only reachable when an account
-    /// token is configured; the anonymous flow is never involved.
-    /// A submitted-but-not-yet-answered triage per anomaly, so Retry can RESUME
-    /// polling the same job instead of POSTing a new one (each POST debits the
-    /// submission charge upfront — a re-POST would charge again).
-
+    /// Stable key for an anomaly's paid-help submission: the same server,
+    /// account, process lineage and condition always map to the same key, so
+    /// Retry resends the stored submission instead of charging again.
     private func submissionKey(for judged: JudgedAnomaly) -> String {
         let identity = "\(serverBaseURL.absoluteString)|\(accountToken)|\(BaselineStore.key(for: judged.anomaly.identity))|\(judged.anomaly.kind.rawValue)"
         let digest = SHA256.hash(data: Data(identity.utf8)).map { String(format: "%02x", $0) }.joined()
@@ -2066,6 +2056,10 @@ final class AppState {
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
     }
 
+    /// Escalate a thin local diagnosis to the paid triage service. Composes
+    /// the account-linked payload (safe fields only — see PayloadComposer),
+    /// logs it byte-for-byte, and POSTs it. Only reachable when an account
+    /// token is configured; the anonymous flow is never involved.
     func escalate(_ judged: JudgedAnomaly) async {
         guard canEscalate, let index = anomalies.firstIndex(where: { $0.id == judged.id }) else { return }
         anomalies[index].escalation = .sending

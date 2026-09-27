@@ -16,6 +16,17 @@ All notable changes to the Anomalous macOS sensor. Dates are release dates;
   public download before publishing its update feed.
 - Network documentation distinguishes contribution, discovery, account-linked
   help, and inactive Private Cloud Compute.
+- Paid Get Help is retry-safe: a pending request is resent with the same
+  idempotency key, so retrying never charges twice.
+- App Attest registration is scoped to each server. Existing installs register
+  once more after updating; registrations made against another server are no
+  longer trusted.
+- Detection: rate rules use time-weighted recent windows, memory Verify checks
+  for continued growth, and chronic CPU alerts need a warm baseline plus current
+  activity, so steady legitimate work raises fewer alerts.
+- Lookup errors say what failed (service status, network, timeout) instead of a
+  generic message.
+- Sparkle is pinned to 2.9.4.
 
 ## 0.2.3 *(2026-07-19)*
 

@@ -383,7 +383,6 @@ public enum DetectionRules {
         robust: RobustStats?,
         sample: ProcessSample,
         history: [ProcessSample] = [],
-        observedSpan: TimeInterval? = nil,
         thresholds: DetectionThresholds = .init()
     ) -> Anomaly? {
         guard let robust, robust.count >= thresholds.warmUpObservations,

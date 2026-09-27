@@ -286,7 +286,7 @@ struct PrivateHistoryReplayTests {
         defer { try? FileManager.default.removeItem(at: scratch) }
         var lineageCount = 0, reservoirCount = 0, seasonalCount = 0, selectionCount = 0
         var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "America/Chicago")!
+        calendar.timeZone = .current
         for (index, file) in files.enumerated() {
             let original = try Data(contentsOf: file)
             let snapshot = try JSONDecoder().decode(BaselineStore.Snapshot.self, from: original)
