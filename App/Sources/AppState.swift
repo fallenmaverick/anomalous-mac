@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 import Observation
 import AppKit
 import WidgetKit
@@ -165,7 +166,7 @@ final class AppState {
     enum EscalationState: Equatable {
         /// `needsCredit` is distinct from `failed`: the fix isn't "retry", it's
         /// "top up" — so the card offers Add credit (→ Account), not Retry.
-        case idle, sending, sent(Int), completed(EscalationClient.ExpertResult), needsCredit, failed(String)
+        case idle, sending, sent(Int), completed(EscalationClient.ExpertResult), needsCredit, requestRemoved, failed(String)
     }
 
     /// Which Settings tab to show — lets a card deep-link (e.g. "Add credit" →
@@ -2026,7 +2027,24 @@ final class AppState {
     /// A submitted-but-not-yet-answered triage per anomaly, so Retry can RESUME
     /// polling the same job instead of POSTing a new one (each POST debits the
     /// submission charge upfront — a re-POST would charge again).
-    private var pendingTriageID: [UUID: Int] = [:]
+
+    private func submissionKey(for judged: JudgedAnomaly) -> String {
+        let identity = "\(serverBaseURL.absoluteString)|\(accountToken)|\(BaselineStore.key(for: judged.anomaly.identity))|\(judged.anomaly.kind.rawValue)"
+        let digest = SHA256.hash(data: Data(identity.utf8)).map { String(format: "%02x", $0) }.joined()
+        return "pendingTriage.\(digest)"
+    }
+
+    private func submissionURL(key: String) -> URL {
+        sendLogDirectory.deletingLastPathComponent().appending(path: "PendingTriage/\(key).json")
+    }
+
+    private func saveSubmission(_ submission: EscalationClient.PendingSubmission, key: String) throws {
+        let url = submissionURL(key: key)
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true,
+                                                attributes: [.posixPermissions: 0o700])
+        try JSONEncoder().encode(submission).write(to: url, options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+    }
 
     func escalate(_ judged: JudgedAnomaly) async {
         guard canEscalate, let index = anomalies.firstIndex(where: { $0.id == judged.id }) else { return }
@@ -2038,16 +2056,36 @@ final class AppState {
             osVersion: serverDescription.isEmpty ? "" : Self.osVersionString,
             hardwareClass: SignatureComposer.hardwareClass
         )
+        let key = submissionKey(for: judged)
+        let client = escalationClient()
         do {
-            let accepted = try await escalationClient().escalate(payload)
-            pendingTriageID[judged.id] = accepted.id
+            var submission: EscalationClient.PendingSubmission
+            if FileManager.default.fileExists(atPath: submissionURL(key: key).path) {
+                submission = try JSONDecoder().decode(EscalationClient.PendingSubmission.self, from: Data(contentsOf: submissionURL(key: key)))
+            } else {
+                submission = .init(payload: payload)
+                try saveSubmission(submission, key: key)
+            }
+            if let acceptedID = submission.acceptedID {
+                try await pollTriage(id: acceptedID, for: judged, key: key, client: client)
+                return
+            }
+            let accepted = try await client.escalate(submission.payload, idempotencyKey: submission.idempotencyKey)
+            submission.acceptedID = accepted.id
+            try saveSubmission(submission, key: key)
+            guard submissionKey(for: judged) == key else { return }
             setEscalation(.sent(accepted.id), for: judged)
             print("[anomalous] escalated \(judged.anomaly.identity.executableName): triage #\(accepted.id)")
-            try await pollTriage(id: accepted.id, for: judged)
+            try await pollTriage(id: accepted.id, for: judged, key: key, client: client)
+        } catch EscalationClient.EscalationError.requestRemoved {
+            guard submissionKey(for: judged) == key else { return }
+            setEscalation(.requestRemoved, for: judged)
         } catch EscalationClient.EscalationError.insufficientBalance {
+            guard submissionKey(for: judged) == key else { return }
             // Not a retryable failure — the fix is to add credit.
             setEscalation(.needsCredit, for: judged)
         } catch {
+            guard submissionKey(for: judged) == key else { return }
             setEscalation(.failed(Self.escalationMessage(error)), for: judged)
             print("[anomalous] escalation failed: \(error)")
         }
@@ -2057,23 +2095,26 @@ final class AppState {
     /// polling it (the answer is likely just still cooking — no new POST, no
     /// second charge). Only start a fresh triage when there's nothing to resume.
     func retryEscalation(_ judged: JudgedAnomaly) async {
-        guard canEscalate else { return }
-        guard let id = pendingTriageID[judged.id] else { await escalate(judged); return }
-        setEscalation(.sent(id), for: judged)
+        await escalate(judged)
+    }
+
+    /// Only the explicit new-diagnosis action discards a deleted request's key.
+    func startNewEscalation(_ judged: JudgedAnomaly) async {
         do {
-            try await pollTriage(id: id, for: judged)
-        } catch EscalationClient.EscalationError.insufficientBalance {
-            setEscalation(.needsCredit, for: judged)
+            let url = submissionURL(key: submissionKey(for: judged))
+            if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
+            await escalate(judged)
         } catch {
-            setEscalation(.failed(Self.escalationMessage(error)), for: judged)
+            setEscalation(.failed("Couldn't clear the old request. Try again."), for: judged)
         }
     }
 
     /// Poll for the expert diagnosis and show it. The research runs server-side
     /// (queued Claude, ~a minute), so the window generously covers it.
-    private func pollTriage(id: Int, for judged: JudgedAnomaly) async throws {
-        let result = try await escalationClient().awaitResult(id: id, attempts: 60, interval: .seconds(2))
-        pendingTriageID[judged.id] = nil
+    private func pollTriage(id: Int, for judged: JudgedAnomaly, key: String, client: EscalationClient) async throws {
+        let result = try await client.awaitResult(id: id, attempts: 60, interval: .seconds(2))
+        guard submissionKey(for: judged) == key else { return }
+        try FileManager.default.removeItem(at: submissionURL(key: key))
         setEscalation(.completed(result), for: judged)
         // Persist the paid answer by condition so it survives auto-resolve →
         // re-detection: the user paid once, they keep the answer.
@@ -2082,6 +2123,7 @@ final class AppState {
             processKey: BaselineStore.key(for: judged.anomaly.identity),
             kind: judged.anomaly.kind
         )
+        guard submissionKey(for: judged) == key else { return }
         // The answer is keyed by CONDITION (processKey|kind), not pid — so every
         // sibling instance of the same program + kind on screen right now gets it
         // at once (two hot CGPDFService helpers both go "magic"), instead of

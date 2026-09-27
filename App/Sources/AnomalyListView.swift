@@ -1180,7 +1180,7 @@ struct GetHelpControl: View {
                 .buttonStyle(.glassProminent)
                 .tint(.green)
                 .shadow(color: .green.opacity(0.55), radius: 6)
-                .help("Get Help — send this diagnosis to Anomalous for an expert answer. Frontier AI researches the process and replies with cited sources you can verify. Costs a few cents from your prepaid balance; you're only charged if it finds a real answer.")
+                .help("Get Help — send this diagnosis to Anomalous for an expert answer. Frontier AI researches the process and replies with cited sources you can verify. A new diagnosis uses 50¢ of prepaid credit; a repeat answer from your account costs 10¢. If no answer is produced, the charge is refunded.")
             case .sending:
                 HStack(spacing: 6) { ProgressView().controlSize(.small); Text("Sending…").font(.callout).foregroundStyle(.secondary) }
             case .sent(let id):
@@ -1205,6 +1205,11 @@ struct GetHelpControl: View {
                 .buttonStyle(.glassProminent)
                 .tint(.orange)
                 .help("Opens Account, where you can top up your prepaid balance. Then tap Get Help again.")
+            case .requestRemoved:
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("The previous diagnosis request is no longer available.").font(.caption)
+                    Button("New diagnosis (50¢)") { Task { await appState.startNewEscalation(judged) } }
+                }
             case .failed(let message):
                 InlineRetryError(message: message) { Task { await appState.retryEscalation(judged) } }
             }
