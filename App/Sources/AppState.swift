@@ -910,6 +910,8 @@ final class AppState {
         // flagged). Anything shown but NOT in here has resolved — see the prune below.
         var activeIds: Set<ProcessIdentity> = []
 
+        var lineageObservations: [String: [[BaselineMetric: Double]]] = [:]
+        var excludedLineages: Set<String> = []
         for sample in samples {
             let previous = history[sample.identity]?.last
             history[sample.identity, default: []].append(sample)
@@ -930,27 +932,27 @@ final class AppState {
                 }
             }
 
-            // Flag status FIRST — it decides whether this tick's readings may
-            // teach the baseline: a flagged runaway burning for two days must
-            // not teach the store that burning is normal (only Phase 4's
-            // explicit acknowledgment may move the envelope).
+            // Restore suppression state independently from baseline learning.
+            // Learning is committed only after all sibling candidates are known.
             if !alreadyFlagged.contains(sample.identity), await baselineStore.isFlagged(sample.identity) {
                 alreadyFlagged.insert(sample.identity)
             }
             let flagged = alreadyFlagged.contains(sample.identity)
 
-            // Feed baselines and fetch the judgment inputs in ONE actor hop
-            // (Δ-rates need two samples; a first-seen process records nothing
-            // and judges nothing — the outermost warm-up).
+            // Select without learning: no sibling can alter another sibling's
+            // baseline during this tick. Clean lineages are committed below.
             var judgment: [BaselineMetric: SelectedBaseline] = [:]
             if let previous {
                 let dt = sample.timestamp.timeIntervalSince(previous.timestamp)
-                if dt > 0 {
+                if dt > 0, dt <= thresholds.maximumSampleGap {
+                    let key = BaselineStore.key(for: sample.identity)
+                    let observations = Self.tickObservations(previous: previous, current: sample, dt: dt)
+                    lineageObservations[key, default: []].append(observations)
                     let tick = await baselineStore.recordTick(
-                        key: BaselineStore.key(for: sample.identity),
+                        key: key,
                         at: sample.timestamp,
-                        observations: Self.tickObservations(previous: previous, current: sample, dt: dt),
-                        feedBaselines: !flagged,
+                        observations: observations,
+                        feedBaselines: false,
                         seasonalMinimum: thresholds.seasonalMinimumObservations
                     )
                     judgment = tick.baselines
@@ -960,7 +962,12 @@ final class AppState {
             // EVERY rule's verdict, not first-match: agreement across
             // dimensions is the confidence signal, and grouping needs the
             // full set to pick a primary.
-            let candidates = candidateAnomalies(for: sample, judgment: judgment)
+            let candidates = ConfidenceEngine.annotate(
+                candidateAnomalies(for: sample, judgment: judgment), signals: systemSignals
+            )
+            if !candidates.isEmpty {
+                excludedLineages.insert(BaselineStore.key(for: sample.identity))
+            }
 
             // Already diagnosed this instance (in-memory this session, or a
             // persisted flag from a previous launch). Don't re-diagnose or
@@ -970,8 +977,11 @@ final class AppState {
             // would otherwise hide behind "All systems nominal" until the flag
             // expires. A known runaway must never be silently hidden.
             if flagged {
-                if stillActive(sample, candidates: candidates) { activeIds.insert(sample.identity) }
-                if let ackSuppressed = await resurfaceIfStillActive(sample, candidates: candidates) {
+                // Cached cards must meet the same current evidence gate as new ones.
+                let surfacingCandidates = candidates.filter { $0.confidence.level == .high }
+                quiet.append(contentsOf: candidates.filter { $0.confidence.level != .high })
+                if stillActive(sample, candidates: surfacingCandidates) { activeIds.insert(sample.identity) }
+                if let ackSuppressed = await resurfaceIfStillActive(sample, candidates: surfacingCandidates) {
                     // Acked-within-envelope: off the UI, but visible in the
                     // quiet findings (transparency panel) — never invisible.
                     quiet.append(ackSuppressed)
@@ -980,8 +990,7 @@ final class AppState {
             }
 
             guard !candidates.isEmpty else { continue }
-            let scored = ConfidenceEngine.annotate(candidates, signals: systemSignals)
-            guard let primary = AnomalyGrouper.collapseSameProcess(scored) else { continue }
+            guard let primary = AnomalyGrouper.collapseSameProcess(candidates) else { continue }
             if primary.confidence.level == .high {
                 // Phase 4 acknowledgment gate, at the surfacing site: a
                 // condition the user marked "normal for me" stays off the UI
@@ -1013,6 +1022,10 @@ final class AppState {
                 print("[anomalous] quiet finding: \(primary.kind.rawValue) in \(primary.identity.executableName) (confidence \(primary.confidence.level.rawValue) \(String(format: "%.2f", primary.confidence.score)), \(primary.drivingMetric) \(primary.baselineDeviation.map { String(format: "%.1f", $0) } ?? "?") MADs)")
             }
         }
+        await baselineStore.recordHealthyLineages(
+            lineageObservations, excluding: excludedLineages,
+            at: samples.map(\.timestamp).max() ?? .now
+        )
         quietFindings = quiet
 
         // Correlation across processes: causally-linked anomalies from the
@@ -1496,6 +1509,7 @@ final class AppState {
             // sustained rule didn't already fire, so we never double-flag CPU.
             robust: judgment[.cpuPercent]?.stats,
             sample: sample,
+            history: hist,
             observedSpan: hist.count >= 2 ? sample.timestamp.timeIntervalSince(hist.first!.timestamp) : nil,
             thresholds: thresholds
         ) {
