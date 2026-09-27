@@ -13,7 +13,7 @@ packages:
   # release time; see memory-bank/build-deployment.md.
   Sparkle:
     url: https://github.com/sparkle-project/Sparkle
-    from: "2.9.4"
+    exactVersion: "2.9.4"
 
 schemes:
   Anomalous:
