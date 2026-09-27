@@ -96,7 +96,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         button.image = quiet ? quietImage : activeImage
         button.image?.accessibilityDescription = quiet
             ? "Anomalous: nothing is wrong"
-            : "Anomalous: \(appState.anomalies.count) anomaly\(appState.anomalies.count == 1 ? "" : "ies") detected"
+            : "Anomalous: \(appState.anomalies.count) \(appState.anomalies.count == 1 ? "anomaly" : "anomalies") detected"
     }
 
     @objc private func togglePopover(_ sender: Any?) {

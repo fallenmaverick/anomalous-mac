@@ -27,6 +27,14 @@ All notable changes to the Anomalous macOS sensor. Dates are release dates;
 - Lookup errors say what failed (service status, network, timeout) instead of a
   generic message.
 - Sparkle is pinned to 2.9.4.
+- Homebrew service checks no longer hang when `brew` prints more than a pipe
+  buffer of output.
+- Enabling system-wide monitoring opens Login Items & Extensions when macOS
+  needs approval, and the monitoring status is correct from launch.
+- The root helper refuses to stop more core system services (for example
+  tccd, amfid, sshd, mDNSResponder and configd).
+- The menu-bar accessibility label says "anomalies" instead of "anomalyies".
+- Thanks to @fallenmaverick (PR #6) for reporting several of these.
 
 ## 0.2.3 *(2026-07-19)*
 
