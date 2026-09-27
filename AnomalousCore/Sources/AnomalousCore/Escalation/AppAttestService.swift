@@ -110,7 +110,7 @@ public actor AppAttestService: AttestationProviding {
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Accept")
 
-        let (data, response) = try await URLSession.shared.data(for: req)
+        let (data, response) = try await ServerOverridePolicy.data(for: req)
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard code == 200 else { throw AppAttestError.challengeFailed(code) }
 
@@ -134,7 +134,7 @@ public actor AppAttestService: AttestationProviding {
             "challenge": challenge.base64EncodedString(),
         ])
 
-        let (_, response) = try await URLSession.shared.data(for: req)
+        let (_, response) = try await ServerOverridePolicy.data(for: req)
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard code == 201 else { throw AppAttestError.registrationFailed(code) }
     }

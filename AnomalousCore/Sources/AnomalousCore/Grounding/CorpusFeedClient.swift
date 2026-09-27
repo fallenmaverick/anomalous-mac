@@ -185,7 +185,7 @@ public struct CorpusFeedClient: Sendable {
         keys: CorpusFeedKeys = .pinned,
         requireSignedFeed: Bool = true,
         storeURL: URL? = nil,
-        transport: @escaping Transport = { try await URLSession.shared.data(for: $0) }
+        transport: @escaping Transport = { try await ServerOverridePolicy.data(for: $0) }
     ) {
         self.baseURL = baseURL
         self.keys = keys

@@ -223,7 +223,7 @@ public struct DiscoveryClient: Sendable {
             req.setValue(value, forHTTPHeaderField: header)
         }
 
-        let (data, response) = try await URLSession.shared.data(for: req)
+        let (data, response) = try await ServerOverridePolicy.data(for: req)
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard code == 200 || code == 202 else { throw DiscoveryError.server(code) }
         return try Self.decodeSubmission(data)
@@ -235,7 +235,7 @@ public struct DiscoveryClient: Sendable {
     public func poll(discoveryID: String) async throws -> PollResult {
         var req = URLRequest(url: baseURL.appending(path: "/api/v1/discover/\(discoveryID)"))
         req.setValue("application/json", forHTTPHeaderField: "Accept")
-        let (data, response) = try await URLSession.shared.data(for: req)
+        let (data, response) = try await ServerOverridePolicy.data(for: req)
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard code == 200 else { throw DiscoveryError.server(code) }
         return try Self.decodePoll(data)

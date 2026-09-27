@@ -323,23 +323,24 @@ final class AppState {
     /// password — dev features stay locked until the real hash is baked in.
     static let devPasswordHash = "efc84df9fc799a353a6981cc57541b3644e7bbf47dcda7c02c4215b510bc1c50"
 
-    /// The server the app talks to, resolved in order: (1) the ANOMALOUS_SERVER
-    /// env var (scripted/dev launches), (2) the developer override — ONLY when
-    /// dev features are unlocked AND the switch is on, (3) production. The
+    /// Debug builds can use ANOMALOUS_SERVER. Release builds ignore environment
+    /// overrides and permit only an explicitly enabled loopback developer server. The
     /// override is restricted to a LOOPBACK host in release builds — a shipped
     /// app can only ever be pointed at the user's OWN machine for local testing,
     /// never redirected to a rogue remote that would capture the account token
     /// and triage payloads.
     static var resolvedServer: String {
-        if let env = ProcessInfo.processInfo.environment["ANOMALOUS_SERVER"], !env.isEmpty {
-            return env
-        }
         let defaults = UserDefaults.standard
-        if defaults.bool(forKey: devUnlockedKey), defaults.bool(forKey: devServerEnabledKey) {
-            let url = defaults.string(forKey: devServerURLKey) ?? defaultDevServer
-            if !url.isEmpty, isAllowedOverride(url) { return url }
-        }
-        return "https://api.anomalous.bot"
+        let override = defaults.bool(forKey: devUnlockedKey) && defaults.bool(forKey: devServerEnabledKey)
+            ? defaults.string(forKey: devServerURLKey) ?? defaultDevServer : nil
+        #if DEBUG
+        let isDebug = true
+        #else
+        let isDebug = false
+        #endif
+        return ServerOverridePolicy.resolve(
+            environment: ProcessInfo.processInfo.environment["ANOMALOUS_SERVER"],
+            developerOverride: override, isDebug: isDebug)
     }
 
     /// True when the app is pointed at a local/dev server rather than
@@ -409,7 +410,7 @@ final class AppState {
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await ServerOverridePolicy.data(for: request)
             let code = (response as? HTTPURLResponse)?.statusCode ?? 0
             let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
             switch code {
@@ -445,7 +446,7 @@ final class AppState {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.httpBody = try? JSONSerialization.data(withJSONObject: ["invite_code": code, "email": mail])
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await ServerOverridePolicy.data(for: request)
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
             let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
             if status == 201, let token = json?["token"] as? String, !token.isEmpty {
@@ -494,7 +495,7 @@ final class AppState {
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await ServerOverridePolicy.data(for: request)
             let code = (response as? HTTPURLResponse)?.statusCode ?? 0
             let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
             if code == 201, let urlString = json?["checkout_url"] as? String, let url = URL(string: urlString) {
@@ -593,18 +594,22 @@ final class AppState {
         // rejected and the last verified corpus (or the shipped map alone)
         // stands. ANOMALOUS_ALLOW_UNSIGNED_FEED=1 is the dev override for a
         // local server that has no signing key configured.
-        let corpus = CorpusFeedClient(
-            baseURL: URL(string: server)!,
-            requireSignedFeed: ProcessInfo.processInfo.environment["ANOMALOUS_ALLOW_UNSIGNED_FEED"] == nil
-        )
+        #if DEBUG
+        let requireSignedFeed = ProcessInfo.processInfo.environment["ANOMALOUS_ALLOW_UNSIGNED_FEED"] == nil
+        #else
+        let requireSignedFeed = true
+        #endif
+        let corpus = CorpusFeedClient(baseURL: URL(string: server)!, requireSignedFeed: requireSignedFeed)
         corpusClient = corpus
         knowledgeMap = (try? KnowledgeMap.shipped()).map { corpus.mergedKnowledgeMap(base: $0) }
         var t = DetectionThresholds()
+        #if DEBUG
         if ProcessInfo.processInfo.environment["ANOMALOUS_DEMO"] != nil {
             t.cpuTimeRatio = 0.05
             t.cpuTimeRatioMinimumUptime = 300
             print("[anomalous] DEMO thresholds active")
         }
+        #endif
         thresholds = t
 
         // Mint the shared HMAC key on first launch (idempotent). The widget
