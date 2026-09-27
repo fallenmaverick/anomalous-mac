@@ -690,7 +690,7 @@ struct DiagnosisCardView: View {
     /// The processed, plain-English "what this means" — for a potentially
     /// non-technical reader. Always visible, right under the raw numbers.
     private var plainSummary: some View {
-        Text(judged.card.whyItsProbablyHot.sentenceCased)
+        Text((judged.anomaly.kind == .gpuSaturation ? JudgmentToolFormatter.gpuExplanation : judged.card.whyItsProbablyHot).sentenceCased)
             .font(.body)
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
@@ -830,7 +830,7 @@ struct DiagnosisCardView: View {
                 .font(.body)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            Text(judged.card.suggestedAction)
+            Text(judged.suggestedActionText)
                 .font(.body)
                 .foregroundStyle(.primary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -857,7 +857,7 @@ struct DiagnosisCardView: View {
             // far from usual this is (the precise figures are in the readout
             // below). Rendered here so the generated field isn't wasted and the
             // headline verdict has its supporting "normal for it" line.
-            if !judged.card.isThisNormal.isEmpty {
+            if judged.anomaly.kind != .gpuSaturation, !judged.card.isThisNormal.isEmpty {
                 Text(judged.card.isThisNormal.sentenceCased)
                     .font(.callout)
                     .foregroundStyle(.secondary)
@@ -926,7 +926,11 @@ struct DiagnosisCardView: View {
         case .rssLeak, .rssCeiling, .memoryLeakFootprint:
             if let r = metricRow("Memory", " MB") { rows.append(r) }
         case .gpuSaturation:
-            if let r = metricRow("GPU", "%") { rows.append(r) }
+            if let current = a.magnitudeCurve.last {
+                var value = JudgmentToolFormatter.number(current)
+                if let baseline = a.baselineValue { value += " · baseline \(JudgmentToolFormatter.number(baseline))" }
+                rows.append(DetailRow(label: "GPU activity", value: value + " (relative index, not % of total capacity)"))
+            }
         case .energyWakeups:
             if let r = metricRow("Wakeups", "/sec") { rows.append(r) }
         case .diskThrash:
@@ -936,7 +940,7 @@ struct DiagnosisCardView: View {
         case .novelProcess, .appHung:
             break   // no measured resource figure to quote honestly
         }
-        rows.append(DetailRow(label: "Baseline window", value: Self.humanWindow(a.windowSeconds)))
+        rows.append(DetailRow(label: "Observation window", value: Self.humanWindow(a.windowSeconds)))
         rows.append(DetailRow(label: "Signal", value: a.kind.plainLabel))
         rows.append(DetailRow(label: "Source", value: detailSource))
         return rows

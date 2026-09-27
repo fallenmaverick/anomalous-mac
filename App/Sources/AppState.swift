@@ -56,6 +56,9 @@ final class AppState {
         /// The grounded baseline sentence used for judgment — reused verbatim
         /// when composing an escalation payload (safe fields only).
         let baselineSentence: String
+        var suggestedActionText: String {
+            anomaly.kind == .gpuSaturation ? JudgmentToolFormatter.gpuGuidance : card.suggestedAction
+        }
         var escalation: EscalationState = .idle
         /// Discovery (opt-in identity lookup) state and any cited sources it
         /// returned. `sourced`/sources drive the "Sourced by Anomalous" UI.
@@ -1616,7 +1619,7 @@ final class AppState {
             bundleID: judged.anomaly.identity.bundleID,
             kind: judged.anomaly.kind.rawValue,
             summary: judged.card.whatItIs,
-            action: judged.card.suggestedAction,
+            action: judged.suggestedActionText,
             safetyTier: judged.card.actionSafetyTier,
             judgedByModel: judged.judgedByModel,
             detectedAt: judged.anomaly.detectedAt,
@@ -2187,7 +2190,7 @@ final class AppState {
         case .rssCeiling, .rssLeak, .memoryLeakFootprint:
             share = MachineLoad.memoryPercent(megabytes: current)
         case .gpuSaturation:
-            share = min(100, current)
+            share = nil // Summed driver counters do not establish whole-GPU utilization.
         default:
             share = nil
         }
@@ -2206,22 +2209,10 @@ final class AppState {
     // nonisolated: a pure function of the anomaly, safe to compose the glance
     // from any context (JudgedAnomaly.glance is used off the main actor).
     nonisolated private static func observation(for anomaly: Anomaly) -> String {
-        let hours = anomaly.windowSeconds / 3600
-        let duration: String
-        if hours >= 48 { duration = "for \(plural(Int(hours / 24), "day"))" }
-        else if hours >= 1 { duration = "for \(plural(Int(hours), "hour"))" }
-        else {
-            // Precise + dynamic: exact seconds under a minute ("for 45 seconds"),
-            // whole minutes otherwise ("for 15 minutes") — never a vague floor.
-            let secs = Int(anomaly.windowSeconds.rounded())
-            duration = secs >= 60 ? "for \(plural(secs / 60, "minute"))"
-                                  : "for \(plural(max(1, secs), "second"))"
-        }
         let current = anomaly.magnitudeCurve.last ?? 0
-        // A just-flagged anomaly hasn't been going long enough for its duration
-        // to be the story — never say "non-stop for 1 second". Only cite a
-        // duration once it's actually sustained (≥ a minute).
-        let durationIsMeaningful = anomaly.windowSeconds >= 60
+        // The history span does not establish how long the latest level persisted.
+        let duration = ""
+        let durationIsMeaningful = false
 
         switch anomaly.kind {
         case .sustainedCPU:
@@ -2251,10 +2242,7 @@ final class AppState {
         case .rssLeak, .memoryLeakFootprint:
             let cur = MachineLoad.memoryPercent(megabytes: current)
             let base = anomaly.baselineValue.map { MachineLoad.memoryPercent(megabytes: $0) }
-            // Only cite how long it's been climbing once that's actually a story;
-            // a fresh flag just reads "its memory is climbing", present tense.
-            let lead = durationIsMeaningful ? "Its memory has been climbing \(duration) — now "
-                                            : "Its memory is climbing — now "
+            let lead = "Its recorded memory use has been climbing — now "
             return lead + MachineGlance.sentence(
                 resource: .memory, currentMachinePercent: cur,
                 baselineMachinePercent: base ?? cur, duration: duration,
@@ -2278,18 +2266,13 @@ final class AppState {
             // Terse and differentiating: the wake-up rate is the story. The
             // longer "busy-wait pattern" explanation is dropped from the
             // always-visible line so a stack of these doesn't repeat verbatim.
-            return "It's waking the processor about \(Int(current)) times a second \(duration) — draining the battery."
+            return "The latest sample records about \(Int(current)) processor wakeups per second — above its usual level."
         case .diskThrash:
-            return "It has been reading and writing about \(Int(current)) MB per second of disk \(duration) — well above its usual."
+            return "The latest sample records about \(Int(current)) MB per second of disk activity — above its usual level."
         case .gpuSaturation:
-            // GPU utilization can report above 100% (summed engines), but "338%
-            // of the GPU" reads as broken — clamp to the believable ceiling, and
-            // once it's maxed just say so.
-            let gpu = Int(min(100, max(0, current)).rounded())
-            let usage = gpu >= 95 ? "nearly all of the GPU" : "about \(gpu)% of the GPU"
-            return "It has been using \(usage) \(duration) — far more than it usually needs."
+            return JudgmentToolFormatter.gpuObservation(current: current, baseline: anomaly.baselineValue)
         case .networkThroughput:
-            return "It has been moving about \(Int(current)) MB per second over the network \(duration) — more than its usual."
+            return "The latest sample records about \(Int(current)) MB per second over the network — above its usual level."
         }
     }
 

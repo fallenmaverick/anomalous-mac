@@ -80,7 +80,7 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
         // Body: the one actionable line. The long identity paragraph
         // (whatItIs) belongs in the app card, not a glanceable notification —
         // it's what made this feel squished.
-        content.body = judged.card.suggestedAction
+        content.body = judged.suggestedActionText
         // Surfaced == confirmed high-confidence (Phase 2 gate in AppState) —
         // the ONLY level that may break Focus. Everything else in the app is
         // quieter than this by design.
