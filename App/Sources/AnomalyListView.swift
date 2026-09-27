@@ -176,9 +176,6 @@ struct AnomalyListView: View {
                     .disabled(!updater.canCheckForUpdates)
                     Divider()
                     Button("Settings…") {
-                        // AppDelegate opens the SwiftUI Settings scene from AppKit
-                        // (showSettingsWindow:) and forces it frontmost — an
-                        // accessory app's Settings window otherwise opens behind.
                         AppDelegate.shared?.openSettingsWindow()
                         AppDelegate.shared?.closePopover()
                     }
