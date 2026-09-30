@@ -5,6 +5,7 @@ All notable changes to the Anomalous macOS sensor. Dates are release dates;
 
 ## Unreleased
 
+- New vector app icon.
 - Home window, expanded diagnosis cards, and consistent settings-window navigation.
 - Energy-aware wakeup checks and conservative GPU activity descriptions: driver
   counters are a relative activity index, not percent of whole-GPU capacity or
