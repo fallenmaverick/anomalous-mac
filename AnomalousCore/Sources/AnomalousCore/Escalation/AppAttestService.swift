@@ -18,6 +18,7 @@ public enum AppAttestError: Error, Equatable {
     case unsupported
     case challengeFailed(Int)
     case registrationFailed(Int)
+    case keyReplacementThrottled
 }
 
 /// Real App Attest (`DCAppAttestService`): generates a Secure-Enclave key once,
@@ -53,18 +54,37 @@ public actor AppAttestService: AttestationProviding {
         self.registeredKey = keys.registered
     }
 
+    /// A stored key the device can no longer sign with is replaced at most this
+    /// often per server, so a transient system failure can't churn keys.
+    static let keyReplacementInterval: TimeInterval = 24 * 60 * 60
+
+    static func replacedAtKey(for baseURL: URL) -> String {
+        "appAttestReplacedAt." + registrationKeys(for: baseURL).keyID.dropFirst("appAttestKeyId.".count)
+    }
+
+    static func mayReplaceKey(lastReplaced: Date?, now: Date = Date()) -> Bool {
+        guard let lastReplaced else { return true }
+        return now.timeIntervalSince(lastReplaced) >= keyReplacementInterval
+    }
+
     public func headers(for body: Data) async -> [String: String] {
         #if canImport(DeviceCheck)
         var stage = "registration"
         do {
             let keyId = try await ensureRegisteredKey()
             stage = "assertion"
-            let clientDataHash = Data(SHA256.hash(data: body))
-            let assertion = try await DCAppAttestService.shared.generateAssertion(keyId, clientDataHash: clientDataHash)
-            return [
-                "X-Anomalous-Key-Id": keyId,
-                "X-Anomalous-Assertion": assertion.base64EncodedString(),
-            ]
+            do {
+                return try await assertionHeaders(keyId: keyId, body: body)
+            } catch {
+                // Self-heal. A key that was registered once but can no longer
+                // sign (a restored or migrated Mac, an OS change, a reset Secure
+                // Enclave) fails on every request, and nothing else ever replaces
+                // it — the user is stuck on "couldn't verify this app". Register
+                // one fresh key and retry once.
+                print("[anomalous] App Attest assertion failed for the stored key; replacing it")
+                let fresh = try await replaceKey(failed: keyId)
+                return try await assertionHeaders(keyId: fresh, body: body)
+            }
         } catch {
             let diagnostic = error as NSError
             print("[anomalous] App Attest \(stage) failed: \(diagnostic.domain) code \(diagnostic.code); supported=\(DCAppAttestService.shared.isSupported); error=\(String(describing: error as? AppAttestError))")
@@ -94,6 +114,32 @@ public actor AppAttestService: AttestationProviding {
     }
 
     #if canImport(DeviceCheck)
+    private func assertionHeaders(keyId: String, body: Data) async throws -> [String: String] {
+        let clientDataHash = Data(SHA256.hash(data: body))
+        let assertion = try await DCAppAttestService.shared.generateAssertion(keyId, clientDataHash: clientDataHash)
+        return [
+            "X-Anomalous-Key-Id": keyId,
+            "X-Anomalous-Assertion": assertion.base64EncodedString(),
+        ]
+    }
+
+    /// Replace a key the device can no longer sign with. Concurrent requests
+    /// share one replacement: if the stored key already differs from the one
+    /// that failed, another request replaced it, so use that.
+    private func replaceKey(failed keyId: String) async throws -> String {
+        if let current = defaults.string(forKey: keyIdKey), current != keyId, defaults.bool(forKey: registeredKey) {
+            return current
+        }
+        let replacedAt = Self.replacedAtKey(for: baseURL)
+        guard Self.mayReplaceKey(lastReplaced: defaults.object(forKey: replacedAt) as? Date) else {
+            throw AppAttestError.keyReplacementThrottled
+        }
+        defaults.set(Date(), forKey: replacedAt)
+        defaults.removeObject(forKey: keyIdKey)
+        defaults.set(false, forKey: registeredKey)
+        return try await ensureRegisteredKey()
+    }
+
     private func register() async throws -> String {
         let service = DCAppAttestService.shared
         guard service.isSupported else { throw AppAttestError.unsupported }

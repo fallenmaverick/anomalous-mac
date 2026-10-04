@@ -13,6 +13,19 @@ struct DiscoveryFailureTests {
         #expect(production.registered != "appAttestRegistered")
         #expect(production.keyID == AppAttestService.registrationKeys(for: URL(string: "https://api.anomalous.bot")!).keyID)
     }
+    @Test func unusableKeysAreReplacedAtMostOncePerDayPerServer() {
+        let now = Date()
+        #expect(AppAttestService.mayReplaceKey(lastReplaced: nil, now: now))
+        #expect(!AppAttestService.mayReplaceKey(lastReplaced: now.addingTimeInterval(-60), now: now))
+        #expect(!AppAttestService.mayReplaceKey(lastReplaced: now.addingTimeInterval(-23 * 3600), now: now))
+        #expect(AppAttestService.mayReplaceKey(lastReplaced: now.addingTimeInterval(-25 * 3600), now: now))
+
+        let production = AppAttestService.replacedAtKey(for: URL(string: "https://api.anomalous.bot")!)
+        let development = AppAttestService.replacedAtKey(for: URL(string: "http://localhost:8787")!)
+        #expect(production != development)
+        #expect(production.hasPrefix("appAttestReplacedAt."))
+    }
+
     @Test func serverRepliesAreNotConnectionFailures() {
         #expect(DiscoveryClient.failureMessage(for: DiscoveryClient.DiscoveryError.server(429)) == "Lookup rate limit reached — try again shortly")
         #expect(DiscoveryClient.failureMessage(for: DiscoveryClient.DiscoveryError.server(503)) == "Lookup failed (HTTP 503)")
