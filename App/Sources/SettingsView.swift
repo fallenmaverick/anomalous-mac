@@ -11,10 +11,13 @@ func anomalousHelpURL(_ path: String = "/help") -> URL {
     URL(string: "https://anomalous.bot" + path) ?? URL(string: "https://anomalous.bot")!
 }
 
-/// Standard Settings scene (⌘,) — the HIG home for a menu-bar app's
-/// configuration. Login item via ServiceManagement (framework, not HIG).
+/// One page of the Settings window (⌘,) — the HIG home for a menu-bar app's
+/// configuration. The window itself is `AppDelegate`'s toolbar-style tab
+/// controller (the standard macOS preferences layout); each tab hosts this view
+/// for its page. Login item via ServiceManagement (framework, not HIG).
 struct SettingsView: View {
     @Bindable var appState: AppState
+    let tab: AppState.SettingsTab
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var inviteCode = ""
     @State private var accountEmail = ""
@@ -27,30 +30,16 @@ struct SettingsView: View {
     @State private var pendingTopupCents: Int?
 
     var body: some View {
-        VStack(spacing: 0) {
-            Picker("Settings section", selection: $appState.settingsTab) {
-                Text("General").tag(AppState.SettingsTab.general)
-                Text("Account").tag(AppState.SettingsTab.account)
-                Text("Privacy").tag(AppState.SettingsTab.privacy)
-                Text("Transparency").tag(AppState.SettingsTab.transparency)
-                Text("About").tag(AppState.SettingsTab.about)
+        Group {
+            switch tab {
+            case .general: general
+            case .account: account
+            case .privacy: privacy
+            case .transparency: transparency
+            case .about: about
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .padding(.horizontal, 20)
-            .padding(.top, 12)
-
-            Group {
-                switch appState.settingsTab {
-                case .general: general
-                case .account: account
-                case .privacy: privacy
-                case .transparency: transparency
-                case .about: about
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .scrollContentBackground(.hidden)
         // Keep the window size stable when switching between settings tabs.
         .frame(width: 560, height: 640)
@@ -76,7 +65,6 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .padding()
         .task { await appState.verifyAccount() }
     }
 
@@ -257,7 +245,6 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .padding()
         .task { appState.helper.refreshStatus() }
     }
 
@@ -453,7 +440,6 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .padding()
     }
 
     /// Compare the typed password's hash against the baked blob. Never stores or
@@ -496,6 +482,5 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .padding()
     }
 }

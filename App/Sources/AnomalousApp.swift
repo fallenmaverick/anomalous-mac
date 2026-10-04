@@ -17,7 +17,7 @@ struct AnomalousApp: App {
 
     var body: some Scene {
         Settings {
-            SettingsView(appState: appState)
+            SettingsView(appState: appState, tab: appState.settingsTab)
         }
         .commands {
             CommandGroup(replacing: .appSettings) {
