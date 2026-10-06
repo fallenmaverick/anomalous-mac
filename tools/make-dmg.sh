@@ -46,7 +46,10 @@ spctl -a -vv --type exec "$APP" 2>&1 | grep -q "accepted" \
   || { echo "✗ app is not Gatekeeper-accepted — run sign.sh + notarize.sh first"; exit 1; }
 
 WORK="$(mktemp -d)"
-MOUNT="$WORK/mount"
+# Finder only scripts volumes mounted under /Volumes, so mount there (not in the
+# scratch dir) and refuse to run if a volume with this name is already mounted.
+MOUNT="/Volumes/$VOL"
+[ ! -e "$MOUNT" ] || { echo "✗ $MOUNT is already mounted — eject it first"; exit 1; }
 STAGING="$WORK/staging"
 TMPDMG="$WORK/staging.dmg"
 MOUNTED=false
@@ -57,7 +60,7 @@ cleanup() {
   rm -rf "$WORK"
 }
 trap cleanup EXIT
-mkdir -p "$STAGING" "$MOUNT"
+mkdir -p "$STAGING"
 cp -R "$APP" "$STAGING/Anomalous.app"
 ln -s /Applications "$STAGING/Applications"
 
@@ -66,7 +69,7 @@ SIZE_MB=$(( $(du -sm "$STAGING" | awk '{print $1}') + 20 ))
 hdiutil create -volname "$VOL" -srcfolder "$STAGING" -fs HFS+ -format UDRW -size "${SIZE_MB}m" -ov "$TMPDMG" >/dev/null
 rm -rf "$STAGING"
 
-hdiutil attach -readwrite -noautoopen -mountpoint "$MOUNT" "$TMPDMG" >/dev/null
+hdiutil attach -readwrite -noautoopen "$TMPDMG" >/dev/null
 MOUNTED=true
 sleep 1
 # Strip hidden cruft so it isn't visible to users who browse with hidden files
@@ -75,7 +78,7 @@ rm -rf "$MOUNT/.fseventsd" "$MOUNT/.Trashes" 2>/dev/null || true
 echo "▸ applying Finder layout (${ICON_SIZE}px icons, ${WIN_W}×${WIN_H} window)"
 osascript <<EOF
 tell application "Finder"
-  tell (POSIX file "$MOUNT" as alias)
+  tell disk "$VOL"
     open
     set current view of container window to icon view
     set toolbar visible of container window to false
@@ -93,7 +96,7 @@ tell application "Finder"
     close
   end tell
   delay 1
-  tell (POSIX file "$MOUNT" as alias)
+  tell disk "$VOL"
     open
     delay 1
     close
