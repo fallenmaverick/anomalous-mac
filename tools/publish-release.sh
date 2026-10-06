@@ -39,7 +39,7 @@ def run(*args):
 
 run('xcrun', 'stapler', 'validate', str(artifact))
 requirement = 'anchor apple generic and certificate leaf[subject.OU] = "7JQGQ7CRH8" and certificate leaf[field.1.2.840.113635.100.6.1.13] exists'
-run('codesign', '--verify', '--strict', '-R', requirement, str(artifact))
+run('codesign', '--verify', '--strict', '-R=' + requirement, str(artifact))
 with tempfile.TemporaryDirectory(prefix='anomalous-release-check-') as mount:
     mounted = False
     try:
@@ -55,7 +55,7 @@ with tempfile.TemporaryDirectory(prefix='anomalous-release-check-') as mount:
             value = e.attrib.get(ns + field) or item.findtext(ns + field)
             assert value == str(info[key]), 'Appcast/app mismatch: ' + field
         assert item.findtext(ns + 'minimumSystemVersion') == info['LSMinimumSystemVersion'], 'Minimum OS mismatch'
-        run('codesign', '--verify', '--deep', '--strict', '-R', requirement, str(app))
+        run('codesign', '--verify', '--deep', '--strict', '-R=' + requirement, str(app))
         run('xcrun', 'stapler', 'validate', str(app))
         run('spctl', '--assess', '--type', 'execute', str(app))
         for binary, entitlement_file in [
@@ -63,7 +63,7 @@ with tempfile.TemporaryDirectory(prefix='anomalous-release-check-') as mount:
             (app / 'Contents/MacOS/AnomalousHelper', 'App/Helper.entitlements'),
             (app / 'Contents/Extensions/AnomalousWidget.appex', 'Widget/AnomalousWidget.entitlements'),
         ]:
-            run('codesign', '--verify', '--strict', '-R', requirement, str(binary))
+            run('codesign', '--verify', '--strict', '-R=' + requirement, str(binary))
             executable = binary
             if binary.is_dir():
                 binary_info = plistlib.loads((binary / 'Contents/Info.plist').read_bytes())
