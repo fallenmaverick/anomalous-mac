@@ -1,11 +1,17 @@
 # Changelog
 
 All notable changes to the Anomalous macOS sensor. Dates are release dates;
-`0.2.3` (`CFBundleVersion` 9) is the latest release.
+`0.3.0` (`CFBundleVersion` 10) is the latest release.
 
-## Unreleased
+## 0.3.0 — 2026-10-06
 
 - New vector app icon.
+- Settings uses the standard macOS toolbar tabs, with the window title following
+  the selected tab.
+- A stored App Attest key that the Mac can no longer sign with is replaced
+  automatically, instead of leaving lookups stuck on "couldn't verify this app".
+- Updating restarts the privileged helper, so the new process protections take
+  effect without a reboot.
 - Home window, expanded diagnosis cards, and consistent settings-window navigation.
 - Energy-aware wakeup checks and conservative GPU activity descriptions: driver
   counters are a relative activity index, not percent of whole-GPU capacity or
