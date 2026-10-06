@@ -11,10 +11,13 @@ func anomalousHelpURL(_ path: String = "/help") -> URL {
     URL(string: "https://anomalous.bot" + path) ?? URL(string: "https://anomalous.bot")!
 }
 
-/// Standard Settings scene (⌘,) — the HIG home for a menu-bar app's
-/// configuration. Login item via ServiceManagement (framework, not HIG).
+/// One page of the Settings window (⌘,) — the HIG home for a menu-bar app's
+/// configuration. The window itself is `AppDelegate`'s toolbar-style tab
+/// controller (the standard macOS preferences layout); each tab hosts this view
+/// for its page. Login item via ServiceManagement (framework, not HIG).
 struct SettingsView: View {
     @Bindable var appState: AppState
+    let tab: AppState.SettingsTab
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var inviteCode = ""
     @State private var accountEmail = ""
@@ -27,16 +30,18 @@ struct SettingsView: View {
     @State private var pendingTopupCents: Int?
 
     var body: some View {
-        TabView(selection: $appState.settingsTab) {
-            general.tabItem { Label("General", systemImage: "gearshape") }.tag(AppState.SettingsTab.general)
-            account.tabItem { Label("Account", systemImage: "person.crop.circle") }.tag(AppState.SettingsTab.account)
-            privacy.tabItem { Label("Privacy", systemImage: "hand.raised") }.tag(AppState.SettingsTab.privacy)
-            transparency.tabItem { Label("Transparency", systemImage: "eye") }.tag(AppState.SettingsTab.transparency)
-            about.tabItem { Label("About", systemImage: "info.circle") }.tag(AppState.SettingsTab.about)
+        Group {
+            switch tab {
+            case .general: general
+            case .account: account
+            case .privacy: privacy
+            case .transparency: transparency
+            case .about: about
+            }
         }
-        // One frame is shared across all tabs, so size it to the TALLEST —
-        // Transparency, with its full "what we sample" list — so no tab
-        // scrolls, and a touch wider so the prose stops wrapping so tightly.
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .scrollContentBackground(.hidden)
+        // Keep the window size stable when switching between settings tabs.
         .frame(width: 560, height: 640)
     }
 
@@ -60,7 +65,6 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .padding()
         .task { await appState.verifyAccount() }
     }
 
@@ -241,7 +245,6 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .padding()
         .task { appState.helper.refreshStatus() }
     }
 
@@ -437,7 +440,6 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .padding()
     }
 
     /// Compare the typed password's hash against the baked blob. Never stores or
@@ -462,7 +464,7 @@ struct SettingsView: View {
                     get: { appState.contributionEnabled },
                     set: { appState.contributionEnabled = $0 }
                 ))
-                Text("Only anonymous signatures (process name, version, OS, anomaly shape) are sent — never paths, arguments, or anything identifiable. Every transmission is recorded in the send log.")
+                Text("Optional and off until you choose it. Signatures include process identity, versions, hardware class, and anomaly measurements; no account, file paths, or command lines. Every payload is recorded in the send log.")
                     .font(.footnote).foregroundStyle(.secondary)
             }
 
@@ -471,7 +473,7 @@ struct SettingsView: View {
                     get: { appState.discoveryEnabled },
                     set: { appState.discoveryEnabled = $0 }
                 ))
-                Text("When Anomalous doesn't recognize a process, send just its name (no personal data, no file paths) to our API to look up what it is. You get a real answer instead of a shrug — **Sourced by Anomalous** — and it's added to the shared knowledge map so everyone benefits. Every lookup is in your send log.")
+                Text("After your first lookup confirmation, research unfamiliar processes using their identity, versions, installation source, and anomaly type. Shared safety guidance requires review. Every lookup is in your send log.")
                     .font(.footnote).foregroundStyle(.secondary)
             }
 
@@ -480,6 +482,5 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .padding()
     }
 }

@@ -2,6 +2,43 @@ import Testing
 import Foundation
 @testable import AnomalousCore
 
+@Suite("Discovery failure reporting")
+struct DiscoveryFailureTests {
+    @Test func attestationRegistrationIsBoundToItsServer() {
+        let production = AppAttestService.registrationKeys(for: URL(string: "https://api.anomalous.bot")!)
+        let development = AppAttestService.registrationKeys(for: URL(string: "http://localhost:8787")!)
+        #expect(production.keyID != development.keyID)
+        #expect(production.registered != development.registered)
+        #expect(production.keyID != "appAttestKeyId")
+        #expect(production.registered != "appAttestRegistered")
+        #expect(production.keyID == AppAttestService.registrationKeys(for: URL(string: "https://api.anomalous.bot")!).keyID)
+    }
+    @Test func unusableKeysAreReplacedAtMostOncePerDayPerServer() {
+        let now = Date()
+        #expect(AppAttestService.mayReplaceKey(lastReplaced: nil, now: now))
+        #expect(!AppAttestService.mayReplaceKey(lastReplaced: now.addingTimeInterval(-60), now: now))
+        #expect(!AppAttestService.mayReplaceKey(lastReplaced: now.addingTimeInterval(-23 * 3600), now: now))
+        #expect(AppAttestService.mayReplaceKey(lastReplaced: now.addingTimeInterval(-25 * 3600), now: now))
+
+        let production = AppAttestService.replacedAtKey(for: URL(string: "https://api.anomalous.bot")!)
+        let development = AppAttestService.replacedAtKey(for: URL(string: "http://localhost:8787")!)
+        #expect(production != development)
+        #expect(production.hasPrefix("appAttestReplacedAt."))
+    }
+
+    @Test func serverRepliesAreNotConnectionFailures() {
+        #expect(DiscoveryClient.failureMessage(for: DiscoveryClient.DiscoveryError.server(429)) == "Lookup rate limit reached — try again shortly")
+        #expect(DiscoveryClient.failureMessage(for: DiscoveryClient.DiscoveryError.server(503)) == "Lookup failed (HTTP 503)")
+        #expect(DiscoveryClient.DiscoveryError.server(403).localizedDescription == "Lookup returned HTTP 403")
+    }
+
+    @Test func transportAndLocalErrorsRemainDistinct() {
+        #expect(DiscoveryClient.failureMessage(for: URLError(.timedOut)) == "Lookup timed out")
+        #expect(DiscoveryClient.failureMessage(for: URLError(.notConnectedToInternet)) == "Couldn't connect to the lookup service")
+        #expect(DiscoveryClient.failureMessage(for: CocoaError(.fileWriteNoPermission)) == "Couldn't complete the lookup")
+    }
+}
+
 // MARK: - #1 On-device routing: the unknown-process gate
 
 @Suite("on-device gate — a bundle names the app; a mystery daemon does not")

@@ -32,6 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let popover = NSPopover()
     private var homeWindowController: NSWindowController?
     private var welcomeWindowController: NSWindowController?
+    private var settingsWindowController: NSWindowController?
 
     // Cached menu-bar marks (same asset-catalog images the SwiftUI label used).
     private lazy var quietImage: NSImage? = {
@@ -95,7 +96,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         button.image = quiet ? quietImage : activeImage
         button.image?.accessibilityDescription = quiet
             ? "Anomalous: nothing is wrong"
-            : "Anomalous: \(appState.anomalies.count) anomaly\(appState.anomalies.count == 1 ? "" : "ies") detected"
+            : "Anomalous: \(appState.anomalies.count) \(appState.anomalies.count == 1 ? "anomaly" : "anomalies") detected"
     }
 
     @objc private func togglePopover(_ sender: Any?) {
@@ -153,20 +154,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    /// Open the SwiftUI `Settings` scene from AppKit (the popover's `openSettings`
-    /// is inert). Then force it frontmost — an accessory app's Settings window
-    /// otherwise opens behind everything.
+    /// Share one settings window across the popover, account links, and ⌘,.
     func openSettingsWindow() {
-        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+        closePopover()
+        if settingsWindowController == nil {
+            let tabs = SettingsTabViewController(appState: appState)
+            let window = NSWindow(contentViewController: tabs)
+            window.title = "Anomalous Settings"
+            window.identifier = NSUserInterfaceItemIdentifier("settings")
+            window.styleMask = [.titled, .closable]
+            window.isReleasedWhenClosed = false
+            window.center()
+            settingsWindowController = NSWindowController(window: window)
+        }
+        // Deep links (account links, popover) set `settingsTab` first.
+        (settingsWindowController?.contentViewController as? SettingsTabViewController)?
+            .select(appState.settingsTab)
+        settingsWindowController?.showWindow(nil)
+        settingsWindowController?.window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
-        DispatchQueue.main.async {
-            NSApp.windows
-                .first { $0.identifier?.rawValue == "com_apple_SwiftUI_Settings_window" }?
-                .makeKeyAndOrderFront(nil)
+    }
+
+    @objc nonisolated private func defaultsChanged() {
+        Task { @MainActor [weak self] in
+            self?.closeCompletedOnboarding()
         }
     }
 
-    @objc private func defaultsChanged() {
+    private func closeCompletedOnboarding() {
         if UserDefaults.standard.bool(forKey: "hasCompletedOnboarding"),
            welcomeWindowController?.window?.isVisible == true {
             welcomeWindowController?.close()
@@ -196,6 +211,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 if AppState.shared.pendingHomeSection != nil { self?.openHome() }
                 self?.trackDeepLink()
             }
+        }
+    }
+}
+
+/// The standard macOS preferences layout: a toolbar of icon-over-label tabs
+/// (System Settings, Safari, Mail), one hosted SwiftUI page per tab. AppKit owns
+/// the toolbar, the selection highlight, and the window title, so the window
+/// matches the system rather than imitating it.
+@MainActor
+final class SettingsTabViewController: NSTabViewController {
+    private static let pages: [(tab: AppState.SettingsTab, title: String, symbol: String)] = [
+        (.general, "General", "gearshape"),
+        (.account, "Account", "person.crop.circle"),
+        (.privacy, "Privacy", "hand.raised"),
+        (.transparency, "Transparency", "eye"),
+        (.about, "About", "info.circle"),
+    ]
+
+    private let appState: AppState
+
+    init(appState: AppState) {
+        self.appState = appState
+        super.init(nibName: nil, bundle: nil)
+        tabStyle = .toolbar
+        for page in Self.pages {
+            let host = NSHostingController(rootView: SettingsView(appState: appState, tab: page.tab))
+            host.sizingOptions = [.preferredContentSize]
+            host.title = page.title          // the window title follows the selected tab
+            let item = NSTabViewItem(viewController: host)
+            item.label = page.title
+            item.image = NSImage(systemSymbolName: page.symbol, accessibilityDescription: page.title)
+            addTabViewItem(item)
+        }
+        select(appState.settingsTab)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    /// Show the page for `tab` (deep links set `AppState.settingsTab` first).
+    func select(_ tab: AppState.SettingsTab) {
+        selectedTabViewItemIndex = Self.pages.firstIndex { $0.tab == tab } ?? 0
+    }
+
+    override func tabView(_ tabView: NSTabView, didSelect tabViewItem: NSTabViewItem?) {
+        super.tabView(tabView, didSelect: tabViewItem)
+        if let tabViewItem, Self.pages.indices.contains(tabView.indexOfTabViewItem(tabViewItem)) {
+            appState.settingsTab = Self.pages[tabView.indexOfTabViewItem(tabViewItem)].tab
         }
     }
 }
